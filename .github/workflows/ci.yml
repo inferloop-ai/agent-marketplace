@@ -1,0 +1,325 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+env:
+  NODE_VERSION: '18'
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  # ============================================================================
+  # Frontend Tests
+  # ============================================================================
+  frontend-test:
+    name: Frontend Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Run type checking
+      working-directory: ./frontend
+      run: npm run type-check
+
+    - name: Run linting
+      working-directory: ./frontend
+      run: npm run lint
+
+    - name: Run tests
+      working-directory: ./frontend
+      run: npm run test:coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./frontend/coverage/lcov.info
+        flags: frontend
+
+  # ============================================================================
+  # Frontend Build
+  # ============================================================================
+  frontend-build:
+    name: Frontend Build
+    runs-on: ubuntu-latest
+    needs: frontend-test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Build application
+      working-directory: ./frontend
+      run: npm run build
+
+    - name: Upload build artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: frontend-build
+        path: frontend/.next
+
+  # ============================================================================
+  # Backend API Tests
+  # ============================================================================
+  backend-api-test:
+    name: Backend API Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: test_db
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+      
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Cache pip dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('backend/api/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      working-directory: ./backend/api
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run linting
+      working-directory: ./backend/api
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        black --check .
+        isort --check-only .
+
+    - name: Run type checking
+      working-directory: ./backend/api
+      run: mypy .
+
+    - name: Run tests
+      working-directory: ./backend/api
+      env:
+        DATABASE_URL: postgresql://postgres:password@localhost:5432/test_db
+        REDIS_URL: redis://localhost:6379/0
+        JWT_SECRET: test-secret-key-for-ci
+      run: |
+        pytest --cov=. --cov-report=xml --cov-report=html
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/api/coverage.xml
+        flags: backend-api
+
+  # ============================================================================
+  # Agent Engine Tests
+  # ============================================================================
+  agent-engine-test:
+    name: Agent Engine Tests
+    runs-on: ubuntu-latest
+    
+    services:
+      redis:
+        image: redis:7
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 6379:6379
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+
+    - name: Install dependencies
+      working-directory: ./backend/agent-engine
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run tests
+      working-directory: ./backend/agent-engine
+      env:
+        REDIS_URL: redis://localhost:6379/0
+      run: |
+        pytest --cov=. --cov-report=xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./backend/agent-engine/coverage.xml
+        flags: agent-engine
+
+  # ============================================================================
+  # Docker Build Tests
+  # ============================================================================
+  docker-build:
+    name: Docker Build Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    strategy:
+      matrix:
+        service: [frontend, api, agent-engine, workflow-engine]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: |
+          ${{ matrix.service == 'frontend' && './frontend' || 
+              matrix.service == 'api' && './backend/api' ||
+              matrix.service == 'agent-engine' && './backend/agent-engine' ||
+              './backend/workflow-engine' }}
+        push: false
+        tags: agent-workflow-${{ matrix.service }}:test
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+  # ============================================================================
+  # Security Scanning
+  # ============================================================================
+  security-scan:
+    name: Security Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+  # ============================================================================
+  # Integration Tests
+  # ============================================================================
+  integration-test:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    needs: [frontend-test, backend-api-test, agent-engine-test]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Create environment file
+      run: |
+        cp .env.example .env
+
+    - name: Start services
+      run: |
+        docker-compose -f docker-compose.yml up -d --build
+        sleep 30  # Wait for services to be ready
+
+    - name: Wait for services to be healthy
+      run: |
+        timeout 60 bash -c 'until curl -f http://localhost:8000/health; do sleep 2; done'
+        timeout 60 bash -c 'until curl -f http://localhost:3000; do sleep 2; done'
+
+    - name: Run integration tests
+      run: |
+        # Add integration test commands here
+        echo "Integration tests would run here"
+
+    - name: Cleanup
+      if: always()
+      run: |
+        docker-compose down -v
+
+  # ============================================================================
+  # Notification
+  # ============================================================================
+  notify:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: [frontend-build, backend-api-test, agent-engine-test, integration-test]
+    if: always()
+    
+    steps:
+    - name: Notify Success
+      if: ${{ needs.frontend-build.result == 'success' && needs.backend-api-test.result == 'success' && needs.agent-engine-test.result == 'success' && needs.integration-test.result == 'success' }}
+      run: |
+        echo "✅ All tests passed successfully!"
+        
+    - name: Notify Failure
+      if: ${{ needs.frontend-build.result == 'failure' || needs.backend-api-test.result == 'failure' || needs.agent-engine-test.result == 'failure' || needs.integration-test.result == 'failure' }}
+      run: |
+        echo "❌ Some tests failed. Please check the logs."
+        exit 1
