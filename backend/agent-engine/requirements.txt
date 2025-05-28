@@ -1,0 +1,38 @@
+# Agent Workflow Builder - Agent Engine Dependencies
+
+# Core Dependencies
+fastapi==0.104.1
+pydantic==1.10.6
+python-multipart==0.0.6
+uvicorn[standard]==0.24.0
+pydantic-settings==2.1.0
+
+# Database & ORM
+sqlalchemy==2.0.23
+alembic==1.12.1
+psycopg2-binary==2.9.9
+asyncpg==0.29.0
+
+# Redis & Caching
+redis==5.0.1
+celery==5.3.4
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+
+# HTTP Client & External APIs
+httpx==0.25.2
+requests==2.31.0
+aiohttp==3.9.1
+
+# LLM Integrations
+langchain==0.0.340
+langchain-community==0.0.2
+langchain-openai==0.0.2
+langchain-anthropic==0.0.4
+
+# Vector Database & Embeddings
+chromadb==0.4.18
+sentence-transformers==2.2.2
+tiktoken==0.5.2

@@ -1,8 +1,40 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { ChevronDown, Plus, Play, Save, Settings, Trash2, Move, Search, Filter, Grid } from 'lucide-react';
 
+// Define interfaces for better type safety
+interface AgentItem {
+  id: string;
+  name: string;
+  description: string;
+}
+
+interface AgentCategory {
+  color: string;
+  items: AgentItem[];
+}
+
+interface Node {
+  id: string;
+  x: number;
+  y: number;
+  label: string;
+  type: string;
+  description: string;
+  category?: string;  // Optional category field
+}
+
+interface Connection {
+  from: string;
+  to: string;
+}
+
+interface ConnectionPoint {
+  start: { x: number; y: number };
+  end: { x: number; y: number };
+}
+
 // Agent Categories and Types
-const agentCategories = {
+const agentCategories: Record<string, AgentCategory> = {
   'LLM Agents': {
     color: '#3B82F6',
     items: [
@@ -59,42 +91,62 @@ const agentCategories = {
 };
 
 // Node Component
-const WorkflowNode = ({ node, isSelected, onSelect, onMove, onStartConnection, onEndConnection, isDragging }) => {
-  const [dragStart, setDragStart] = useState(null);
-  const nodeRef = useRef(null);
+const WorkflowNode = ({ 
+  node, 
+  isSelected, 
+  onSelect, 
+  onMove, 
+  onStartConnection, 
+  onEndConnection, 
+  isDragging 
+}: { 
+  node: Node; 
+  isSelected: boolean; 
+  onSelect: (id: string) => void; 
+  onMove: (id: string, x: number, y: number) => void; 
+  onStartConnection: (id: string, type: 'input' | 'output') => void; 
+  onEndConnection?: (id: string) => void; 
+  isDragging: boolean; 
+}) => {
+  const [dragStart, setDragStart] = useState<{ x: number; y: number } | null>(null);
+  const nodeRef = useRef<HTMLDivElement>(null);
 
-  const category = Object.keys(agentCategories).find(cat => 
-    agentCategories[cat].items.some(item => item.id === node.type)
-  );
-  const categoryColor = category ? agentCategories[category].color : '#6B7280';
+  const categoryColor = node.category ? agentCategories[node.category]?.color : '#6B7280';
 
-  const handleMouseDown = (e) => {
-    if (e.target.classList.contains('connection-point')) return;
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (e.target instanceof HTMLElement && e.target.classList.contains('connection-point')) return;
     
     e.stopPropagation();
     onSelect(node.id);
     
-    const rect = nodeRef.current.getBoundingClientRect();
-    const canvasRect = nodeRef.current.closest('.canvas').getBoundingClientRect();
-    
-    setDragStart({
-      x: e.clientX - (node.x + canvasRect.left),
-      y: e.clientY - (node.y + canvasRect.top)
-    });
+    if (nodeRef.current) {
+      const rect = nodeRef.current.getBoundingClientRect();
+      const canvasRect = nodeRef.current.closest('.canvas')?.getBoundingClientRect() || { left: 0, top: 0 };
+      
+      setDragStart({
+        x: e.clientX - (node.x + canvasRect.left),
+        y: e.clientY - (node.y + canvasRect.top)
+      });
+    }
   };
 
-  const handleMouseMove = useCallback((e) => {
+  const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!dragStart) return;
     
-    const canvasRect = nodeRef.current.closest('.canvas').getBoundingClientRect();
-    const newX = e.clientX - canvasRect.left - dragStart.x;
-    const newY = e.clientY - canvasRect.top - dragStart.y;
-    
-    onMove(node.id, Math.max(0, newX), Math.max(0, newY));
+    if (nodeRef.current) {
+      const canvasRect = nodeRef.current.closest('.canvas')?.getBoundingClientRect() || { left: 0, top: 0 };
+      const newX = e.clientX - canvasRect.left - dragStart.x;
+      const newY = e.clientY - canvasRect.top - dragStart.y;
+      
+      onMove(node.id, Math.max(0, newX), Math.max(0, newY));
+    }
   }, [dragStart, node.id, onMove]);
 
   const handleMouseUp = () => {
     setDragStart(null);
+    if (onEndConnection) {
+      onEndConnection(node.id);
+    }
   };
 
   React.useEffect(() => {
@@ -160,8 +212,12 @@ const WorkflowNode = ({ node, isSelected, onSelect, onMove, onStartConnection, o
 };
 
 // Connection SVG Component
-const ConnectionSVG = ({ connections, nodes, tempConnection }) => {
-  const getNodeCenter = (nodeId, point = 'output') => {
+const ConnectionSVG = ({ connections, nodes, tempConnection }: { 
+  connections: Connection[]; 
+  nodes: Node[]; 
+  tempConnection?: ConnectionPoint;
+}) => {
+  const getNodeCenter = (nodeId: string, point: 'output' = 'output') => {
     const node = nodes.find(n => n.id === nodeId);
     if (!node) return { x: 0, y: 0 };
     
@@ -172,7 +228,7 @@ const ConnectionSVG = ({ connections, nodes, tempConnection }) => {
     };
   };
 
-  const createPath = (start, end) => {
+  const createPath = (start: { x: number; y: number }, end: { x: number; y: number }) => {
     const deltaX = end.x - start.x;
     const deltaY = end.y - start.y;
     const controlPointOffset = Math.max(Math.abs(deltaX) / 2, 50);
@@ -222,7 +278,7 @@ const ConnectionSVG = ({ connections, nodes, tempConnection }) => {
 };
 
 export default function AgentWorkflowBuilder() {
-  const [nodes, setNodes] = useState([
+  const [nodes, setNodes] = useState<Node[]>([
     {
       id: '1',
       x: 100,
@@ -241,26 +297,26 @@ export default function AgentWorkflowBuilder() {
     }
   ]);
   
-  const [connections, setConnections] = useState([
+  const [connections, setConnections] = useState<Connection[]>([
     { from: '1', to: '2' }
   ]);
   
-  const [expandedCategories, setExpandedCategories] = useState({
+  const [expandedCategories, setExpandedCategories] = useState<Record<string, boolean>>({
     'LLM Agents': true
   });
   
-  const [selectedNode, setSelectedNode] = useState(null);
-  const [connecting, setConnecting] = useState(null);
-  const [tempConnection, setTempConnection] = useState(null);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const [selectedNode, setSelectedNode] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState<{ nodeId: string; type: 'input' | 'output' } | null>(null);
+  const [tempConnection, setTempConnection] = useState<ConnectionPoint | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
-  const [viewMode, setViewMode] = useState('list'); // 'list' or 'grid'
-  const [draggedAgent, setDraggedAgent] = useState(null);
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [draggedAgent, setDraggedAgent] = useState<AgentItem | null>(null);
   
-  const canvasRef = useRef(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
 
-  const toggleCategory = (category) => {
+  const toggleCategory = (category: string) => {
     setExpandedCategories(prev => ({
       ...prev,
       [category]: !prev[category]
@@ -268,7 +324,7 @@ export default function AgentWorkflowBuilder() {
   };
 
   // Filter agents based on search and category
-  const getFilteredAgents = () => {
+  const getFilteredAgents = (): Record<string, AgentCategory> => {
     let filteredCategories = { ...agentCategories };
     
     // Filter by selected category
@@ -298,13 +354,13 @@ export default function AgentWorkflowBuilder() {
   };
 
   // Handle drag start from agent library
-  const handleAgentDragStart = (e, agentItem) => {
+  const handleAgentDragStart = (e: React.DragEvent, agentItem: AgentItem) => {
     setDraggedAgent(agentItem);
     e.dataTransfer.effectAllowed = 'copy';
   };
 
   // Handle drop on canvas
-  const handleCanvasDrop = (e) => {
+  const handleCanvasDrop = (e: React.DragEvent) => {
     e.preventDefault();
     if (draggedAgent && canvasRef.current) {
       const rect = canvasRef.current.getBoundingClientRect();
@@ -317,12 +373,12 @@ export default function AgentWorkflowBuilder() {
     }
   };
 
-  const handleCanvasDragOver = (e) => {
+  const handleCanvasDragOver = (e: React.DragEvent) => {
     e.preventDefault();
   };
 
-  const addNodeToCanvas = (agentItem, position = null) => {
-    const newNode = {
+  const addNodeToCanvas = (agentItem: AgentItem, position?: { x: number; y: number }) => {
+    const newNode: Node = {
       id: Date.now().toString(),
       x: position ? position.x : Math.random() * 300 + 50,
       y: position ? position.y : Math.random() * 300 + 50,
@@ -333,13 +389,13 @@ export default function AgentWorkflowBuilder() {
     setNodes(prev => [...prev, newNode]);
   };
 
-  const moveNode = (nodeId, x, y) => {
+  const moveNode = (nodeId: string, x: number, y: number) => {
     setNodes(prev => prev.map(node => 
       node.id === nodeId ? { ...node, x, y } : node
     ));
   };
 
-  const selectNode = (nodeId) => {
+  const selectNode = (nodeId: string) => {
     setSelectedNode(nodeId);
   };
 
@@ -353,13 +409,13 @@ export default function AgentWorkflowBuilder() {
     }
   };
 
-  const startConnection = (nodeId, type) => {
+  const startConnection = (nodeId: string, type: 'input' | 'output') => {
     setConnecting({ nodeId, type });
   };
 
-  const endConnection = (targetNodeId) => {
+  const endConnection = (targetNodeId: string) => {
     if (connecting && connecting.nodeId !== targetNodeId) {
-      const newConnection = {
+      const newConnection: Connection = {
         from: connecting.type === 'output' ? connecting.nodeId : targetNodeId,
         to: connecting.type === 'output' ? targetNodeId : connecting.nodeId
       };
@@ -377,7 +433,7 @@ export default function AgentWorkflowBuilder() {
     setTempConnection(null);
   };
 
-  const handleCanvasMouseMove = (e) => {
+  const handleCanvasMouseMove = (e: React.MouseEvent) => {
     if (!canvasRef.current) return;
     
     const rect = canvasRef.current.getBoundingClientRect();
@@ -401,7 +457,7 @@ export default function AgentWorkflowBuilder() {
     }
   };
 
-  const handleCanvasClick = (e) => {
+  const handleCanvasClick = (e: React.MouseEvent) => {
     if (e.target === canvasRef.current) {
       setSelectedNode(null);
       if (connecting) {
@@ -411,7 +467,7 @@ export default function AgentWorkflowBuilder() {
     }
   };
 
-  const updateNodeProperty = (nodeId, property, value) => {
+  const updateNodeProperty = (nodeId: string, property: keyof Node, value: string | number) => {
     setNodes(prev => prev.map(node => 
       node.id === nodeId ? { ...node, [property]: value } : node
     ));
@@ -566,7 +622,7 @@ export default function AgentWorkflowBuilder() {
           {/* No Results Message */}
           {Object.keys(getFilteredAgents()).length === 0 && (
             <div className="text-center py-8 text-gray-500">
-              <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
+              <Search className="w-8 h-8 mx-auto mb-4 opacity-50" />
               <p className="font-medium">No agents found</p>
               <p className="text-sm">Try adjusting your search or filters</p>
             </div>
