@@ -1,6 +1,6 @@
 # Model Context Protocol (MCP) Server
 
-A scalable and efficient context management system for AI agents, designed to handle context sharing and management across different execution environments.
+A scalable context management system for AI agents, designed to handle context storage, retrieval, and management across multiple AI agents.
 
 ## Features
 
@@ -12,6 +12,94 @@ A scalable and efficient context management system for AI agents, designed to ha
 - Type-safe with Pydantic models
 - Pagination and filtering support
 - CORS support for cross-origin requests
+
+### 1. Agent Context Management
+
+The MCP server provides a robust system for managing context across different AI agents. Key features include:
+
+#### Context Creation
+```python
+# Create a new context for an agent
+context = await mcp_client.create_context(
+    data={
+        "user_id": "user-123",
+        "conversation_history": [],
+        "user_preferences": {}
+    },
+    agent_id="agent-456",
+    agent_type="chat",
+    tags=["conversation", "active"],
+    description="New conversation with user"
+)
+```
+
+#### Context Updates
+```python
+# Update an existing context
+await mcp_client.update_context(
+    context_id="context-789",
+    data={
+        "conversation_history": [...],
+        "last_message": "Hello",
+        "last_response": "Hi there!"
+    },
+    tags=["conversation", "active"],
+    description="Updated conversation history"
+)
+```
+
+#### Context Retrieval
+```python
+# Get a specific context
+context = await mcp_client.get_context("context-789")
+
+# List contexts with filters
+contexts = await mcp_client.list_contexts(
+    agent_id="agent-456",
+    tags=["conversation", "active"],
+    limit=100,
+    offset=0
+)
+```
+
+### 2. Agent Authentication and Security
+
+The MCP server implements a secure authentication system for different types of agents:
+
+#### Authentication Tokens
+```python
+# Backend service token
+MCP_BACKEND_TOKEN = "your-backend-service-token"
+
+# Admin token
+MCP_ADMIN_TOKEN = "your-admin-token"
+```
+
+#### Token Usage
+```python
+# Initialize client with authentication
+async def initialize_client():
+    client = MCPClient()
+    await client.authenticate(MCP_BACKEND_TOKEN)
+    return client
+```
+
+### 3. Agent-Specific Context Features
+
+#### Version Control
+- Each context update increments the version number
+- Maintains a complete history of changes
+- Supports rollback to previous versions
+
+#### Metadata Tracking
+- Automatic timestamping of context updates
+- Agent-specific metadata storage
+- Custom tags for categorization
+
+#### Error Handling
+- Comprehensive error logging
+- Detailed error responses
+- Proper HTTP status codes
 
 ## Installation
 
