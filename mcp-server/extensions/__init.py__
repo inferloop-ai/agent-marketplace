@@ -1,0 +1,138 @@
+# mcp-server/extensions/__init__.py
+import os
+import sys
+import logging
+import importlib.util
+from typing import Dict, Any, Callable, List
+from pathlib import Path
+
+from ..config import settings
+
+logger = logging.getLogger(__name__)
+
+class Extension:
+    """Base class for MCP extensions."""
+    
+    def __init__(self, name: str, version: str = "1.0.0", description: str = ""):
+        self.name = name
+        self.version = version
+        self.description = description
+        self.enabled = True
+        self.hooks: Dict[str, Callable] = {}
+    
+    def register_hook(self, event: str, callback: Callable):
+        """Register a hook for an event."""
+        self.hooks[event] = callback
+        logger.debug(f"Extension {self.name} registered hook for {event}")
+    
+    async def initialize(self):
+        """Initialize the extension."""
+        pass
+    
+    async def cleanup(self):
+        """Cleanup when extension is disabled."""
+        pass
+
+class ExtensionManager:
+    """Manages MCP extensions."""
+    
+    def __init__(self):
+        self.extensions: Dict[str, Extension] = {}
+        self.hooks: Dict[str, List[Callable]] = {}
+    
+    async def load_extensions(self):
+        """Load extensions from the extensions directory."""
+        if not settings.enable_extensions:
+            return
+        
+        extensions_path = Path(settings.extensions_dir)
+        if not extensions_path.exists():
+            logger.info("Extensions directory not found, creating...")
+            extensions_path.mkdir(parents=True, exist_ok=True)
+            return
+        
+        # Load Python extension files
+        for ext_file in extensions_path.glob("*.py"):
+            if ext_file.name.startswith("__"):
+                continue
+            
+            try:
+                await self._load_extension_file(ext_file)
+            except Exception as e:
+                logger.error(f"Failed to load extension {ext_file.name}: {e}")
+    
+    async def _load_extension_file(self, file_path: Path):
+        """Load a single extension file."""
+        module_name = file_path.stem
+        spec = importlib.util.spec_from_file_location(module_name, file_path)
+        
+        if not spec or not spec.loader:
+            logger.error(f"Could not load spec for {file_path}")
+            return
+        
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[module_name] = module
+        spec.loader.exec_module(module)
+        
+        # Look for extension setup function
+        if hasattr(module, 'setup_extension'):
+            extension = await module.setup_extension()
+            if isinstance(extension, Extension):
+                await self._register_extension(extension)
+                logger.info(f"Loaded extension: {extension.name} v{extension.version}")
+            else:
+                logger.error(f"Extension {module_name} setup_extension() must return Extension instance")
+        else:
+            logger.error(f"Extension {module_name} missing setup_extension() function")
+    
+    async def _register_extension(self, extension: Extension):
+        """Register an extension."""
+        self.extensions[extension.name] = extension
+        
+        # Register hooks
+        for event, callback in extension.hooks.items():
+            if event not in self.hooks:
+                self.hooks[event] = []
+            self.hooks[event].append(callback)
+        
+        # Initialize extension
+        await extension.initialize()
+    
+    async def trigger_hook(self, event: str, **kwargs):
+        """Trigger all hooks for an event."""
+        if event not in self.hooks:
+            return
+        
+        for callback in self.hooks[event]:
+            try:
+                if hasattr(callback, '__call__'):
+                    await callback(**kwargs)
+            except Exception as e:
+                logger.error(f"Extension hook failed for {event}: {e}")
+    
+    async def enable_extension(self, name: str) -> bool:
+        """Enable an extension."""
+        if name not in self.extensions:
+            return False
+        
+        extension = self.extensions[name]
+        if not extension.enabled:
+            extension.enabled = True
+            await extension.initialize()
+        
+        return True
+    
+    async def disable_extension(self, name: str) -> bool:
+        """Disable an extension."""
+        if name not in self.extensions:
+            return False
+        
+        extension = self.extensions[name]
+        if extension.enabled:
+            extension.enabled = False
+            await extension.cleanup()
+        
+        return True
+
+# Global extension manager
+extension_manager = ExtensionManager()

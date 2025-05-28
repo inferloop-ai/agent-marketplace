@@ -18,40 +18,117 @@ Configuration:
     - LOG_BODY: Set to True to log request/response bodies (default: False)
 """
 
+# backend/api/middleware/logging.py (Enhanced)
 import logging
 import time
+import json
+from uuid import uuid4
+from typing import Callable
+from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
 
-logger = logging.getLogger("api.logging")
+logger = logging.getLogger("api.requests")
 
-class LoggingMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, log_body: bool = False):
+class EnhancedLoggingMiddleware(BaseHTTPMiddleware):
+    """Enhanced logging middleware with structured logging."""
+    
+    def __init__(self, app, log_body: bool = False, log_headers: bool = False):
         super().__init__(app)
         self.log_body = log_body
-
-    async def dispatch(self, request: Request, call_next):
+        self.log_headers = log_headers
+    
+    async def dispatch(self, request: Request, call_next: Callable) -> Response:
+        # Generate request ID if not exists
+        request_id = getattr(request.state, 'request_id', str(uuid4()))
+        request.state.request_id = request_id
+        
         start_time = time.time()
-        request_body = None
-
-        if self.log_body:
-            request_body = await request.body()
-
-        response = await call_next(request)
-        process_time = (time.time() - start_time) * 1000
-
-        log_message = (
-            f"{request.method} {request.url.path} "
-            f"Status: {response.status_code} "
-            f"Duration: {process_time:.2f}ms"
+        
+        # Prepare request log data
+        request_data = {
+            "request_id": request_id,
+            "method": request.method,
+            "url": str(request.url),
+            "path": request.url.path,
+            "query_params": dict(request.query_params),
+            "client_ip": self._get_client_ip(request),
+            "user_agent": request.headers.get("user-agent"),
+            "timestamp": time.time()
+        }
+        
+        if self.log_headers:
+            request_data["headers"] = dict(request.headers)
+        
+        # Log request body for non-GET requests
+        if self.log_body and request.method not in ["GET", "HEAD", "OPTIONS"]:
+            try:
+                body = await request.body()
+                if body:
+                    request_data["body_size"] = len(body)
+                    # Only log small bodies to avoid massive logs
+                    if len(body) < 1000:
+                        request_data["body"] = body.decode("utf-8", errors="ignore")
+            except Exception as e:
+                request_data["body_error"] = str(e)
+        
+        # Process request
+        try:
+            response = await call_next(request)
+        except Exception as exc:
+            # Log exception and re-raise
+            logger.error(
+                "Request failed with exception",
+                extra={
+                    **request_data,
+                    "exception": str(exc),
+                    "duration_ms": (time.time() - start_time) * 1000
+                }
+            )
+            raise
+        
+        # Prepare response log data
+        duration_ms = (time.time() - start_time) * 1000
+        response_data = {
+            **request_data,
+            "status_code": response.status_code,
+            "duration_ms": round(duration_ms, 2),
+            "response_size": response.headers.get("content-length")
+        }
+        
+        # Determine log level based on status code
+        if response.status_code >= 500:
+            log_level = logging.ERROR
+        elif response.status_code >= 400:
+            log_level = logging.WARNING
+        else:
+            log_level = logging.INFO
+        
+        # Log the request/response
+        logger.log(
+            log_level,
+            f"{request.method} {request.url.path} - {response.status_code} - {duration_ms:.2f}ms",
+            extra=response_data
         )
-
-        if self.log_body and request_body:
-            log_message += f" | Request Body: {request_body.decode(errors='replace')}"
-        if self.log_body and hasattr(response, "body_iterator"):
-            # body_iterator can only be read once; omitting for safety
-            log_message += " | Response Body: <streamed>"
-
-        logger.info(log_message)
+        
+        # Add request ID to response headers
+        response.headers["X-Request-ID"] = request_id
+        
         return response
+    
+    def _get_client_ip(self, request: Request) -> str:
+        """Extract client IP address from request."""
+        # Check for forwarded headers (when behind proxy)
+        forwarded_for = request.headers.get("x-forwarded-for")
+        if forwarded_for:
+            return forwarded_for.split(",")[0].strip()
+        
+        real_ip = request.headers.get("x-real-ip")
+        if real_ip:
+            return real_ip
+        
+        # Fallback to direct connection
+        if hasattr(request.client, "host"):
+            return request.client.host
+        
+        return "unknown"
+

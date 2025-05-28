@@ -1,0 +1,80 @@
+# rag-pipeline/requirements.txt
+# RAG Pipeline Dependencies
+
+# Core Framework
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+pydantic==2.5.0
+python-multipart==0.0.6
+
+# Document Processing
+PyPDF2==3.0.1
+python-docx==1.1.0
+python-pptx==0.6.23
+openpyxl==3.1.2
+beautifulsoup4==4.12.2
+markdown==3.5.1
+python-magic==0.4.27
+
+# Text Processing & NLP
+nltk==3.8.1
+spacy==3.7.2
+langchain==0.0.340
+langchain-community==0.0.2
+tiktoken==0.5.2
+textstat==0.7.3
+
+# Embeddings & Models
+sentence-transformers==2.2.2
+transformers==4.35.2
+torch==2.1.1
+openai==1.3.7
+anthropic==0.7.7
+
+# Vector Databases
+qdrant-client==1.7.0
+chromadb==0.4.18
+pinecone-client==2.2.4
+weaviate-client==3.25.3
+
+# Search & Retrieval
+rank-bm25==0.2.2
+faiss-cpu==1.7.4
+
+# File Handling
+aiofiles==23.2.1
+python-multipart==0.0.6
+Pillow==10.1.0
+
+# Database & Storage
+sqlalchemy==2.0.23
+alembic==1.12.1
+asyncpg==0.29.0
+redis==5.0.1
+
+# HTTP & Async
+httpx==0.25.2
+aiohttp==3.9.1
+
+# Monitoring & Logging
+prometheus-client==0.19.0
+structlog==23.2.0
+sentry-sdk[fastapi]==1.38.0
+
+# Configuration
+python-dotenv==1.0.0
+pydantic-settings==2.1.0
+
+# Utilities
+numpy==1.25.2
+pandas==2.1.4
+tqdm==4.66.1
+python-slugify==8.0.1
+
+# Development
+pytest==7.4.3
+pytest-asyncio==0.21.1
+black==23.11.0
+isort==5.12.0
+mypy==1.7.1
+

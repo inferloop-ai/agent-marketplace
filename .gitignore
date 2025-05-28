@@ -55,3 +55,7 @@ temp/
 
 # Cache
 .cache/
+
+# svg files
+*.svg
+

@@ -1,0 +1,113 @@
+repos:
+-   repo: https://github.com/psf/black
+    rev: 23.11.0
+    hooks:
+    -   id: black
+        language_version: python3.8
+        args: [--target-version=py38]
+
+-   repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+    -   id: isort
+        language_version: python3.8
+        args: [--profile=black]
+
+-   repo: https://github.com/pycqa/flake8
+    rev: 7.0.0
+    hooks:
+    -   id: flake8
+        language_version: python3.8
+        additional_dependencies: [flake8-docstrings]
+
+-   repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.0
+    hooks:
+    -   id: mypy
+        language_version: python3.8
+        additional_dependencies: [types-redis][MASTER]
+
+# Ignore certain files or directories
+ignore=__pycache__,.git,__init__.py
+
+# Add paths to the python path
+pythonpath=mcp-server
+
+[MESSAGES CONTROL]
+
+# Disable certain messages
+disable=C0114,C0115,C0116,R0903,R0913,R0914,R0915,R0916
+
+# Enable certain messages
+enable=E1101  # no-member
+
+[FORMAT]
+
+# Maximum line length
+max-line-length=100
+
+# Maximum number of characters on a single docstring line
+max-docstring-line-length=100
+
+[TYPECHECK]
+
+# Ignore certain classes for member attributes
+ignored-classes=BaseExtension,ExtensionManager
+
+# Ignore certain modules for member attributes
+ignored-modules=redis,fastapi,pydantic
+
+[BASIC]
+
+# Good variable names which should always be accepted
+good-names=i,j,k,ex,Run,_,ctx
+
+# Bad variable names which should always be refused, even if they are defined in
+# globals() or locals()
+bad-names=foo,bar,baz,toto,tutu,tata
+
+[DESIGN]
+
+# Maximum number of arguments for function / method
+max-args=5
+
+# Maximum number of local variables in function / method body
+max-locals=15
+
+# Maximum number of return statements in function / method body
+max-returns=6
+
+# Maximum number of branch statements in function / method body
+max-branches=12
+
+# Maximum number of statements in function / method body
+max-statements=50
+
+[REPORTS]
+
+# Reports to be generated
+reports=no
+
+# Include message's id in output
+include-ids=yes
+
+# Add a section with the raw number of messages in the reports
+messages-statistics=no
+
+# Add a section listing the messages by module in the reports
+messages-by-module=no
+
+# Add a section listing the messages by category in the reports
+messages-by-category=no
+
+# Add a section listing the messages by type in the reports
+messages-by-type=no
+
+# Add a section listing the messages by module and type in the reports
+messages-by-module-and-type=no
+
+# Add a section listing the messages by module and category in the reports
+messages-by-module-and-category=no
+
+# Add a section listing the messages by module and type and category in the reports
+messages-by-module-and-type-and-category=no
